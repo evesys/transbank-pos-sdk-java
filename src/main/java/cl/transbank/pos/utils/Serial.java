@@ -1,5 +1,6 @@
 package cl.transbank.pos.utils;
 
+import cl.transbank.pos.exceptions.common.TransbankConnectionException;
 import cl.transbank.pos.exceptions.common.TransbankException;
 import cl.transbank.pos.responses.common.IntermediateResponse;
 import com.fazecast.jSerialComm.SerialPort;
@@ -14,13 +15,15 @@ import java.util.*;
 
 @Log4j2
 public class Serial {
+
     protected static final byte ACK = 0x06;
     public static final int DEFAULT_TIMEOUT = 150000;
     public static final int DEFAULT_BAUDRATE = 115200;
     private static final char STX = '\u0002';
     private static final char ETX = '\u0003';
 
-    @Getter @Setter
+    @Getter
+    @Setter
     private int timeout = DEFAULT_TIMEOUT;
     protected String currentResponse;
     protected SerialPort port;
@@ -36,7 +39,7 @@ public class Serial {
     private void setCurrentResponse(String response) {
         currentResponse = response;
 
-        if(checkIntermediateMessage(currentResponse)
+        if (checkIntermediateMessage(currentResponse)
                 && onIntermediateMessageReceivedListener != null) {
             onIntermediateMessageReceivedListener.onReceived(new IntermediateResponse(currentResponse));
         }
@@ -45,7 +48,7 @@ public class Serial {
     @SuppressWarnings({"unused", "UnusedReturnValue"})
     public List<String> listPorts() {
         List<String> serialPorts = new ArrayList<>();
-        SerialPort[] ports =  SerialPort.getCommPorts();
+        SerialPort[] ports = SerialPort.getCommPorts();
 
         for (SerialPort serialPort : ports) {
             serialPorts.add(serialPort.getSystemPortName());
@@ -72,30 +75,33 @@ public class Serial {
         return port.closePort();
     }
 
-    protected void checkCanWrite() throws TransbankException {
-        if(port == null || !port.isOpen()) {
-            throw new TransbankException("Can't write to port, the port is null or not open");
+    protected void checkCanWrite() throws TransbankConnectionException {
+        if (port == null || !port.isOpen()) {
+            throw new TransbankConnectionException("Can't write to port, the port is null or not open");
         }
     }
 
     protected String createCommand(String payload) {
-        String fullCommand = STX+payload+ETX;
+        String fullCommand = STX + payload + ETX;
         return fullCommand + lrc(fullCommand);
     }
 
     private char lrc(String command) {
-        char lrc = (char)0;
+        char lrc = (char) 0;
 
-        for (int i = 1; i < command.length(); i++)
-        {
+        for (int i = 1; i < command.length(); i++) {
             lrc ^= command.charAt(i);
         }
         return lrc;
     }
 
-    protected void write(String payload) throws TransbankException, IOException { write(payload, false); }
+    protected void write(String payload) throws TransbankException, IOException {
+        write(payload, false);
+    }
 
-    protected void write(String payload, boolean intermediateMessages) throws TransbankException, IOException { write(payload, intermediateMessages, false, false); }
+    protected void write(String payload, boolean intermediateMessages) throws TransbankException, IOException {
+        write(payload, intermediateMessages, false, false);
+    }
 
     protected void write(String payload, boolean intermediateMessages, boolean saleDetail, boolean printOnPOS) throws TransbankException, IOException {
         currentResponse = "";
@@ -112,20 +118,20 @@ public class Serial {
 
         port.writeBytes(hexCommand, hexCommand.length);
 
-        if(!checkAck()) {
+        if (!checkAck()) {
             throw new TransbankException("NACK received, check the message sent to the POS");
         }
         log.debug("Read ACK Ok");
 
-        if(intermediateMessages) {
+        if (intermediateMessages) {
             readResponse();
-            while(checkIntermediateMessage(currentResponse)) {
+            while (checkIntermediateMessage(currentResponse)) {
                 readResponse();
             }
             return;
         }
 
-        if(saleDetail) {
+        if (saleDetail) {
             saleDetailResponse = new ArrayList<>();
             String authorizationCode = "Start";
 
@@ -153,7 +159,7 @@ public class Serial {
         byte[] response = new byte[bytesAvailable];
         port.readBytes(response, bytesAvailable);
 
-        if(response[response.length-2] != ETX) {
+        if (response[response.length - 2] != ETX) {
             waitResponse();
             int fullResponseLength = bytesAvailable;
             bytesAvailable = port.bytesAvailable();
@@ -171,7 +177,7 @@ public class Serial {
         writeAck();
     }
 
-    protected boolean checkAck() throws TransbankException {
+    protected boolean checkAck() throws TransbankConnectionException {
         byte[] response = new byte[1];
 
         waitResponse();
@@ -181,12 +187,14 @@ public class Serial {
         return response[0] == ACK;
     }
 
-    private void waitResponse() throws TransbankException {
+    private void waitResponse() throws TransbankConnectionException {
         final boolean[] isTimeoutCompleted = {false};
         Timer timer = new Timer();
         TimerTask timerTask = new TimerTask() {
             @Override
-            public void run() {isTimeoutCompleted[0] = true;}
+            public void run() {
+                isTimeoutCompleted[0] = true;
+            }
         };
 
         timer.schedule(timerTask, timeout);
@@ -196,10 +204,10 @@ public class Serial {
             //waiting for response
         }
 
-        if(isTimeoutCompleted[0]) {
+        if (isTimeoutCompleted[0]) {
             timer.cancel();
             port.flushIOBuffers();
-            throw new TransbankException("Read operation Timeout");
+            throw new TransbankConnectionException("Read operation Timeout");
         }
         timer.cancel();
     }
@@ -221,24 +229,28 @@ public class Serial {
     }
 
     private String getFunctionCode(String response) {
-        return response.substring(1, response.length()-2).split("\\|")[0];
+        return response.substring(1, response.length() - 2).split("\\|")[0];
     }
 
     private String getAuthorizationCode(String response) {
-        return response.substring(1, response.length()-2).split("\\|")[5];
+        return response.substring(1, response.length() - 2).split("\\|")[5];
     }
 
-    private boolean checkIntermediateMessage(String response)
-    {
+    private boolean checkIntermediateMessage(String response) {
         return response.length() >= 1 && getFunctionCode(response).equals("0900");
     }
 
     public interface OnIntermediateMessageReceivedListener {
+
         void onReceived(IntermediateResponse intermediateMessage);
     }
 
     @SuppressWarnings({"unused", "UnusedReturnValue"})
     public boolean isPortOpen() {
-        return port.isOpen();
+        return port != null && port.isOpen();
+    }
+    
+    public String getPortName() {
+        return (port != null && port.isOpen()) ? port.getSystemPortName() : null;
     }
 }
