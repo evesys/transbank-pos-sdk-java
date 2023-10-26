@@ -16,7 +16,7 @@ public class ResponseCodes {
         baseMap.put(4, "Transacción ya fue anulada");
         baseMap.put(5, "No existe transacción para anular");
         baseMap.put(6, "Tarjeta no soportada");
-        baseMap.put(7, "Transacción cancelada desde el POS");
+        baseMap.put(7, "Transacción cancelada");
         baseMap.put(8, "No puede anular transacción débito");
         baseMap.put(9, "Error lectura tarjeta");
         baseMap.put(10, "Monto menor al mínimo permitido");
