@@ -72,6 +72,9 @@ public class Serial {
 
     @SuppressWarnings({"unused", "UnusedReturnValue"})
     public boolean closePort() {
+        if (port == null) {
+            return false;
+        }
         return port.closePort();
     }
 
